@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>LIME — Indie Game Developer</title>
+    <meta name="description" content="LIME — indie game developer, creator of Light World. Unity, C#, pixel art and custom shaders.">
+
+    <style>
+        :root {
+            --bg: #05080d;
+            --bg-soft: #091118;
+            --panel: rgba(9, 20, 26, .68);
+            --line: rgba(70, 240, 255, .18);
+            --line-strong: rgba(70, 240, 255, .42);
+            --cyan: #46f0ff;
+            --cyan-soft: #8af7ff;
+            --text: #effcff;
+            --muted: #8ba5aa;
+            --dim: #53666b;
+            --shadow: 0 25px 90px rgba(0, 238, 255, .10);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            min-height: 100vh;
+            overflow-x: hidden;
+            color: var(--text);
+            background: var(--bg);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        button,
+        a {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ---------- AMBIENT BACKGROUND ---------- */
+
+        .background,
+        .grid,
+        .grain,
+        .scanlines,
+        .cursor-glow,
+        .orb {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .background {
+            z-index: -10;
+            background:
+                radial-gradient(circle at 18% 16%, rgba(0, 217, 255, .15), transparent 24%),
+                radial-gradient(circle at 83% 71%, rgba(0, 157, 255, .11), transparent 27%),
+                radial-gradient(circle at 54% 45%, rgba(0, 255, 234, .04), transparent 35%),
+                linear-gradient(180deg, #060a10 0%, #04070b 100%);
+        }
+
+        .grid {
+            z-index: -9;
+            opacity: .10;
+            background-image:
+                linear-gradient(rgba(70, 240, 255, .22) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(70, 240, 255, .22) 1px, transparent 1px);
+            background-size: 52px 52px;
+            mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,.85) 55%, transparent 100%);
+        }
+
+        .grain {
+            z-index: -7;
+            opacity: .045;
+            background-image:
+                url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E");
+            background-size: 220px 220px;
+            animation: noise .22s steps(2) infinite;
+        }
+
+        .scanlines {
+            z-index: 50;
+            opacity: .035;
+            background: repeating-linear-gradient(
+                to bottom,
+                transparent 0px,
+                transparent 3px,
+                rgba(255,255,255,.12) 4px
+            );
+        }
+
+        .orb {
+            z-index: -6;
+            width: 520px;
+            height: 520px;
+            inset: auto;
+            left: 50%;
+            top: 22%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(70,240,255,.08), transparent 66%);
+            filter: blur(10px);
+            animation: floatOrb 8s ease-in-out infinite;
+        }
+
+        .cursor-glow {
+            z-index: 0;
+            width: 280px;
+            height: 280px;
+            inset: auto;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(70,240,255,.08), transparent 68%);
+            opacity: 0;
+            transition: opacity .25s ease;
+        }
+
+        body.cursor-active .cursor-glow {
+            opacity: 1;
+        }
+
+        @keyframes noise {
+            0% { transform: translate(0,0); }
+            25% { transform: translate(-1%, 1%); }
+            50% { transform: translate(1%, -1%); }
+            75% { transform: translate(1%, 1%); }
+            100% { transform: translate(0,0); }
+        }
+
+        @keyframes floatOrb {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -46%) scale(1.08); }
+        }
+
+        /* ---------- TOP PROGRESS ---------- */
+
+        .scroll-progress {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 3px;
+            z-index: 200;
+            background: linear-gradient(90deg, #00c8ff, var(--cyan), #a5ffff);
+            box-shadow: 0 0 18px rgba(70,240,255,.8);
+        }
+
+        /* ---------- NAV ---------- */
+
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 100;
+            padding: 18px 7%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(70,240,255,.10);
+            background: rgba(5, 8, 13, .58);
+            backdrop-filter: blur(18px);
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 950;
+            font-size: 22px;
+            letter-spacing: 5px;
+            color: var(--cyan);
+            text-shadow: 0 0 22px rgba(70,240,255,.75);
+        }
+
+        .logo-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 14px var(--cyan);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .links {
+            display: flex;
+            gap: 26px;
+        }
+
+        .links a {
+            position: relative;
+            color: #a5babf;
+            font-size: 14px;
+            transition: color .25s ease;
+        }
+
+        .links a::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            bottom: -8px;
+            width: 100%;
+            height: 1px;
+            transform: scaleX(0);
+            transform-origin: left;
+            background: var(--cyan);
+            box-shadow: 0 0 12px var(--cyan);
+            transition: transform .25s ease;
+        }
+
+        .links a:hover {
+            color: var(--cyan);
+        }
+
+        .links a:hover::after {
+            transform: scaleX(1);
+        }
+
+        /* ---------- GLOBAL LAYOUT ---------- */
+
+        .container {
+            width: min(1180px, calc(100% - 40px));
+            margin: 0 auto;
+        }
+
+        section {
+            padding: 120px 0;
+            position: relative;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+            color: var(--cyan);
+            font: 700 12px/1 monospace;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .eyebrow::before {
+            content: "";
+            width: 22px;
+            height: 1px;
+            background: var(--cyan);
+            box-shadow: 0 0 10px var(--cyan);
+        }
+
+        .section-title {
+            font-size: clamp(40px, 7vw, 74px);
+            letter-spacing: -3px;
+            line-height: .95;
+            margin-bottom: 55px;
+        }
+
+        .section-title span {
+            color: var(--cyan);
+            text-shadow: 0 0 28px rgba(70,240,255,.24);
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        /* ---------- HERO ---------- */
+
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            padding-top: 150px;
+            padding-bottom: 90px;
+        }
+
+        .hero-layout {
+            display: grid;
+            grid-template-columns: 1.2fr .8fr;
+            gap: 55px;
+            align-items: center;
+        }
+
+        .hero h1 {
+            font-size: clamp(68px, 13vw, 160px);
+            line-height: .82;
+            letter-spacing: -8px;
+            margin-bottom: 32px;
+            text-transform: uppercase;
+        }
+
+        .hero h1 .glow {
+            color: #f3ffff;
+            text-shadow:
+                0 0 16px rgba(70,240,255,.20),
+                0 0 60px rgba(70,240,255,.12);
+        }
+
+        .hero h2 {
+            color: #a9c0c4;
+            font-size: clamp(22px, 3.3vw, 40px);
+            font-weight: 500;
+            line-height: 1.07;
+            letter-spacing: -1px;
+        }
+
+        .hero-copy {
+            max-width: 720px;
+            margin-top: 24px;
+            color: #829a9f;
+            font-size: 18px;
+            line-height: 1.8;
+        }
+
+        .hero-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 13px;
+            margin-top: 36px;
+        }
+
+        .button {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 50px;
+            padding: 0 18px;
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            background: rgba(70,240,255,.035);
+            font-weight: 800;
+            font-size: 13px;
+            letter-spacing: .5px;
+            overflow: hidden;
+            transition: transform .25s ease, background .25s ease, box-shadow .25s ease, color .25s ease;
+        }
+
+        .button span {
+            position: relative;
+            z-index: 2;
+        }
+
+        .button::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: var(--cyan);
+            transform: translateX(-102%);
+            transition: transform .3s ease;
+        }
+
+        .button:hover {
+            color: #041014;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px rgba(70,240,255,.22);
+        }
+
+        .button:hover::before {
+            transform: translateX(0);
+        }
+
+        .button.secondary {
+            color: #9fb3b8;
+            border-color: rgba(159,179,184,.28);
+        }
+
+        .button.secondary::before {
+            background: #dffcff;
+        }
+
+        .button.secondary:hover {
+            color: #061014;
+        }
+
+        .hero-card {
+            position: relative;
+            min-height: 430px;
+            border: 1px solid var(--line);
+            background:
+                radial-gradient(circle at 50% 42%, rgba(70,240,255,.15), transparent 28%),
+                linear-gradient(145deg, rgba(14,28,35,.9), rgba(4,10,14,.92));
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .hero-card::before {
+            content: "";
+            position: absolute;
+            inset: 12px;
+            border: 1px dashed rgba(70,240,255,.16);
+        }
+
+        .hero-card-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(70,240,255,.09) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(70,240,255,.09) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: radial-gradient(circle at center, black, transparent 72%);
+        }
+
+        .hero-orbit {
+            position: absolute;
+            width: 230px;
+            height: 230px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(70,240,255,.18);
+            border-radius: 50%;
+            box-shadow: inset 0 0 45px rgba(70,240,255,.04);
+            animation: spin 18s linear infinite;
+        }
+
+        .hero-orbit::after {
+            content: "";
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 22px var(--cyan);
+        }
+
+        .hero-cat {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -55%);
+            font-size: 116px;
+            filter: drop-shadow(0 0 25px rgba(70,240,255,.55));
+            animation: catFloat 4s ease-in-out infinite;
+        }
+
+        .hero-card-label {
+            position: absolute;
+            left: 30px;
+            right: 30px;
+            bottom: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(70,240,255,.13);
+            color: #91aab0;
+            font: 700 11px/1.4 monospace;
+            letter-spacing: 1.3px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--cyan);
+        }
+
+        .status i {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #55ffcc;
+            box-shadow: 0 0 12px #55ffcc;
+            animation: pulse 1.5s ease infinite;
+        }
+
+        @keyframes spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes catFloat {
+            0%, 100% { transform: translate(-50%, -55%) translateY(0); }
+            50% { transform: translate(-50%, -55%) translateY(-10px); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: .55; transform: scale(.9); }
+            50% { opacity: 1; transform: scale(1.15); }
+        }
+
+        /* ---------- QUICK FACTS ---------- */
+
+        .facts {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+        }
+
+        .fact {
+            padding: 24px;
+            border: 1px solid var(--line);
+            background: rgba(8, 18, 24, .56);
+            transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+        }
+
+        .fact:hover {
+            transform: translateY(-5px);
+            border-color: var(--line-strong);
+            box-shadow: 0 15px 35px rgba(70,240,255,.06);
+        }
+
+        .fact-number {
+            color: var(--cyan);
+            font-size: 30px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+
+        .fact-title {
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .fact-text {
+            color: var(--dim);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* ---------- FEATURED GAME ---------- */
+
+        .featured {
+            display: grid;
+            grid-template-columns: 1.15fr .85fr;
+            gap: 24px;
+        }
+
+        .game-visual,
+        .game-info {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+        }
+
+        .game-visual {
+            position: relative;
+            min-height: 560px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(70,240,255,.17), transparent 22%),
+                radial-gradient(circle at 50% 75%, rgba(0,119,255,.08), transparent 38%),
+                linear-gradient(180deg, rgba(11,28,34,.92), rgba(4,11,15,.96));
+        }
+
+        .game-visual::before {
+            content: "LIGHT WORLD";
+            position: absolute;
+            top: 28px;
+            left: 28px;
+            font: 900 12px/1 monospace;
+            letter-spacing: 4px;
+            color: rgba(138,247,255,.55);
+        }
+
+        .game-visual::after {
+            content: "SOUL / BODY / LIGHT";
+            position: absolute;
+            right: 28px;
+            bottom: 28px;
+            font: 700 10px/1 monospace;
+            letter-spacing: 2px;
+            color: rgba(138,247,255,.3);
+        }
+
+        .lw-rings {
+            position: absolute;
+            width: 330px;
+            height: 330px;
+            border-radius: 50%;
+            border: 1px solid rgba(70,240,255,.12);
+            box-shadow:
+                0 0 70px rgba(70,240,255,.07),
+                inset 0 0 60px rgba(70,240,255,.04);
+        }
+
+        .lw-rings::before,
+        .lw-rings::after {
+            content: "";
+            position: absolute;
+            inset: 22px;
+            border-radius: 50%;
+            border: 1px dashed rgba(70,240,255,.13);
+        }
+
+        .lw-rings::after {
+            inset: 64px;
+            border-style: solid;
+            opacity: .7;
+        }
+
+        .lw-cat {
+            position: relative;
+            z-index: 2;
+            font-size: 145px;
+            filter: drop-shadow(0 0 32px rgba(70,240,255,.7));
+            animation: catFloat 4s ease-in-out infinite;
+        }
+
+        .game-info {
+            padding: 36px;
+        }
+
+        .game-info h3 {
+            font-size: clamp(40px, 5vw, 58px);
+            letter-spacing: -2px;
+            margin-bottom: 16px;
+        }
+
+        .game-info .sub {
+            color: var(--cyan);
+            font: 700 11px/1.4 monospace;
+            letter-spacing: 2px;
+            margin-bottom: 22px;
+        }
+
+        .game-info p {
+            color: #91a8ad;
+            line-height: 1.8;
+        }
+
+        .tag-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+            margin: 28px 0;
+        }
+
+        .tag {
+            padding: 8px 11px;
+            border: 1px solid rgba(70,240,255,.17);
+            color: var(--cyan);
+            background: rgba(70,240,255,.05);
+            font: 700 10px/1 monospace;
+            letter-spacing: 1px;
+        }
+
+        .feature-list {
+            margin: 25px 0 30px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .feature-item {
+            display: flex;
+            gap: 11px;
+            color: #a0b5b9;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .feature-item::before {
+            content: "◆";
+            color: var(--cyan);
+            font-size: 9px;
+            margin-top: 5px;
+        }
+
+        /* ---------- SKILLS ---------- */
+
+        .skills {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .skill {
+            position: relative;
+            padding: 30px;
+            min-height: 210px;
+            border: 1px solid var(--line);
+            background: rgba(8,18,24,.56);
+            overflow: hidden;
+            transition: transform .28s ease, border-color .28s ease, box-shadow .28s ease;
+        }
+
+        .skill::after {
+            content: "";
+            position: absolute;
+            width: 130px;
+            height: 130px;
+            right: -45px;
+            bottom: -45px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(70,240,255,.10), transparent 65%);
+        }
+
+        .skill:hover {
+            transform: translateY(-7px);
+            border-color: var(--line-strong);
+            box-shadow: 0 18px 40px rgba(70,240,255,.06);
+        }
+
+        .skill h3 {
+            color: var(--cyan);
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+
+        .skill p {
+            color: #82999e;
+            line-height: 1.65;
+            font-size: 14px;
+        }
+
+        /* ---------- JOURNEY ---------- */
+
+        .journey {
+            position: relative;
+            max-width: 920px;
+            margin: 0 auto;
+        }
+
+        .journey::before {
+            content: "";
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: linear-gradient(to bottom, transparent, rgba(70,240,255,.35), transparent);
+        }
+
+        .journey-item {
+            position: relative;
+            padding-left: 48px;
+            margin-bottom: 34px;
+        }
+
+        .journey-dot {
+            position: absolute;
+            left: 4px;
+            top: 5px;
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            background: var(--bg);
+            border: 1px solid var(--cyan);
+            box-shadow: 0 0 18px rgba(70,240,255,.55);
+        }
+
+        .journey-year {
+            color: var(--cyan);
+            font: 700 12px/1 monospace;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px;
+        }
+
+        .journey-title {
+            font-size: 22px;
+            margin-bottom: 7px;
+        }
+
+        .journey-text {
+            color: #81999e;
+            line-height: 1.65;
+            font-size: 14px;
+        }
+
+        /* ---------- ABOUT ---------- */
+
+        .about-grid {
+            display: grid;
+            grid-template-columns: 1.1fr .9fr;
+            gap: 24px;
+            align-items: stretch;
+        }
+
+        .about-card {
+            padding: 35px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+        }
+
+        .about-card p {
+            color: #94aaae;
+            font-size: 17px;
+            line-height: 1.85;
+        }
+
+        .highlight {
+            color: var(--cyan);
+        }
+
+        .profile-list {
+            display: grid;
+            gap: 14px;
+        }
+
+        .profile-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(70,240,255,.09);
+            font-size: 14px;
+        }
+
+        .profile-row:last-child {
+            border-bottom: none;
+        }
+
+        .profile-key {
+            color: #597077;
+        }
+
+        .profile-value {
+            color: #d7f7fa;
+            text-align: right;
+        }
+
+        /* ---------- PROJECTS ---------- */
+
+        .projects {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .project {
+            position: relative;
+            min-height: 235px;
+            padding: 30px;
+            border: 1px solid var(--line);
+            background: rgba(8,18,24,.56);
+            overflow: hidden;
+            transition: transform .28s ease, border-color .28s ease, box-shadow .28s ease;
+        }
+
+        .project:hover {
+            transform: translateY(-6px);
+            border-color: var(--line-strong);
+            box-shadow: 0 18px 45px rgba(70,240,255,.07);
+        }
+
+        .project-icon {
+            display: inline-flex;
+            width: 44px;
+            height: 44px;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(70,240,255,.18);
+            color: var(--cyan);
+            font: 800 14px monospace;
+            margin-bottom: 24px;
+        }
+
+        .project h3 {
+            margin-bottom: 10px;
+            font-size: 22px;
+        }
+
+        .project p {
+            color: #81999e;
+            line-height: 1.65;
+            font-size: 14px;
+        }
+
+        /* ---------- CONTACT ---------- */
+
+        .contact-shell {
+            position: relative;
+            padding: 52px;
+            border: 1px solid var(--line);
+            background:
+                radial-gradient(circle at 80% 20%, rgba(70,240,255,.10), transparent 24%),
+                rgba(8,18,24,.60);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .contact-shell::before {
+            content: "CONTACT_NODE";
+            position: absolute;
+            top: 18px;
+            right: 22px;
+            color: rgba(70,240,255,.2);
+            font: 700 10px/1 monospace;
+            letter-spacing: 2px;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: 1fr .8fr;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .contact h2 {
+            font-size: clamp(42px, 7vw, 76px);
+            line-height: .92;
+            letter-spacing: -4px;
+            margin-bottom: 20px;
+        }
+
+        .contact-copy {
+            max-width: 620px;
+            color: #82999e;
+            line-height: 1.8;
+        }
+
+        .socials {
+            display: grid;
+            gap: 10px;
+        }
+
+        .social {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 17px 18px;
+            border: 1px solid rgba(70,240,255,.14);
+            background: rgba(4,12,16,.56);
+            transition: transform .22s ease, border-color .22s ease, background .22s ease;
+        }
+
+        .social:hover {
+            transform: translateX(5px);
+            border-color: var(--line-strong);
+            background: rgba(70,240,255,.06);
+        }
+
+        .social-left {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+        }
+
+        .social-icon {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(70,240,255,.16);
+            color: var(--cyan);
+            font: 800 11px monospace;
+        }
+
+        .social-label {
+            font-weight: 800;
+        }
+
+        .social-handle {
+            color: #668088;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .social-arrow {
+            color: var(--cyan);
+            font-size: 17px;
+        }
+
+        /* ---------- QR ---------- */
+
+        .qr-layout {
+            margin-top: 22px;
+            display: grid;
+            grid-template-columns: 160px 1fr;
+            gap: 20px;
+            align-items: center;
+            padding: 18px;
+            border: 1px solid rgba(70,240,255,.14);
+            background: rgba(4,12,16,.56);
+        }
+
+        #telegramQR {
+            width: 140px;
+            height: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            background: white;
+        }
+
+        #telegramQR img,
+        #telegramQR canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .qr-title {
+            color: var(--cyan);
+            font: 800 11px/1 monospace;
+            letter-spacing: 1.8px;
+            margin-bottom: 9px;
+        }
+
+        .qr-text {
+            color: #7f969b;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* ---------- FOOTER ---------- */
+
+        footer {
+            padding: 35px 0 55px;
+            color: #4e6268;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .footer-line {
+            width: min(1180px, calc(100% - 40px));
+            height: 1px;
+            margin: 0 auto 24px;
+            background: linear-gradient(90deg, transparent, rgba(70,240,255,.17), transparent);
+        }
+
+        /* ---------- REVEAL ---------- */
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(28px);
+            transition: opacity .85s ease, transform .85s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ---------- FLOATING PARTICLES ---------- */
+
+        .particle {
+            position: fixed;
+            width: 2px;
+            height: 2px;
+            border-radius: 50%;
+            background: rgba(138,247,255,.70);
+            box-shadow: 0 0 10px rgba(70,240,255,.7);
+            pointer-events: none;
+            z-index: -2;
+            animation: particleFloat linear infinite;
+        }
+
+        @keyframes particleFloat {
+            from { transform: translate3d(0, 0, 0); opacity: 0; }
+            10% { opacity: .7; }
+            90% { opacity: .7; }
+            to { transform: translate3d(0, -130px, 0); opacity: 0; }
+        }
+
+        /* ---------- MOBILE ---------- */
+
+        @media (max-width: 980px) {
+            .hero-layout,
+            .featured,
+            .about-grid,
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-card {
+                max-width: 700px;
+            }
+
+            .facts {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .skills {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 720px) {
+            nav {
+                padding: 15px 5%;
+            }
+
+            .links {
+                display: none;
+            }
+
+            section {
+                padding: 90px 0;
+            }
+
+            .container {
+                width: min(100% - 26px, 1180px);
+            }
+
+            .hero {
+                padding-top: 120px;
+            }
+
+            .hero h1 {
+                letter-spacing: -5px;
+            }
+
+            .facts,
+            .skills,
+            .projects {
+                grid-template-columns: 1fr;
+            }
+
+            .game-visual {
+                min-height: 390px;
+            }
+
+            .contact-shell {
+                padding: 28px 20px;
+            }
+
+            .qr-layout {
+                grid-template-columns: 1fr;
+            }
+
+            #telegramQR {
+                width: 150px;
+                height: 150px;
+            }
+
+            .hero-card {
+                min-height: 350px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                animation-duration: .001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .001ms !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="scroll-progress"></div>
+    <div class="background"></div>
+    <div class="grid"></div>
+    <div class="grain"></div>
+    <div class="scanlines"></div>
+    <div class="orb"></div>
+    <div class="cursor-glow"></div>
+
+    <nav>
+        <a class="logo" href="#top" aria-label="LIME home">
+            <span class="logo-dot"></span>
+            LIME
+        </a>
+
+        <div class="links">
+            <a href="#light-world">Light World</a>
+            <a href="#skills">Skills</a>
+            <a href="#about">About</a>
+            <a href="#projects">Projects</a>
+            <a href="#contact">Contact</a>
+        </div>
+    </nav>
+
+    <main id="top">
+        <!-- HERO -->
+        <section class="hero">
+            <div class="container hero-layout">
+                <div class="reveal">
+                    <div class="eyebrow">INDIE GAME DEVELOPER</div>
+
+                    <h1><span class="glow">LIME</span></h1>
+
+                    <h2>
+                        I CREATE WORLDS<br>
+                        THAT YOU CAN PLAY.
+                    </h2>
+
+                    <p class="hero-copy">
+                        I'm a young indie game developer focused on
+                        <span class="highlight">Unity, C#, 2D games, pixel art and custom shaders</span>.
+                        My main project is <span class="highlight">Light World</span> —
+                        a game where gameplay, atmosphere and visual effects are built together.
+                    </p>
+
+                    <div class="hero-buttons">
+                        <a class="button" href="#light-world"><span>VIEW LIGHT WORLD</span></a>
+                        <a class="button secondary" href="#contact"><span>CONTACT ME</span></a>
+                    </div>
+                </div>
+
+                <div class="hero-card reveal">
+                    <div class="hero-card-grid"></div>
+                    <div class="hero-orbit"></div>
+                    <div class="hero-cat">🐈‍⬛</div>
+
+                    <div class="hero-card-label">
+                        <span>CREATIVE SYSTEM // ONLINE</span>
+                        <span class="status"><i></i> BUILDING</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- QUICK FACTS -->
+        <section>
+            <div class="container">
+                <div class="facts">
+                    <div class="fact reveal">
+                        <div class="fact-number">2010</div>
+                        <div class="fact-title">Born</div>
+                        <div class="fact-text">Started exploring the world of game development at a young age.</div>
+                    </div>
+
+                    <div class="fact reveal">
+                        <div class="fact-number">2D</div>
+                        <div class="fact-title">Main Direction</div>
+                        <div class="fact-text">Pixel-art games, atmospheric worlds and readable gameplay.</div>
+                    </div>
+
+                    <div class="fact reveal">
+                        <div class="fact-number">C#</div>
+                        <div class="fact-title">Core Language</div>
+                        <div class="fact-text">Gameplay logic, systems, UI, tools and experiments in Unity.</div>
+                    </div>
+
+                    <div class="fact reveal">
+                        <div class="fact-number">LW</div>
+                        <div class="fact-title">Main Project</div>
+                        <div class="fact-text">Light World — my current long-term game project.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- LIGHT WORLD -->
+        <section id="light-world">
+            <div class="container">
+                <div class="eyebrow reveal">FEATURED PROJECT</div>
+
+                <h2 class="section-title reveal">
+                    LIGHT <span>WORLD</span>
+                </h2>
+
+                <div class="featured">
+                    <div class="game-visual reveal">
+                        <div class="lw-rings"></div>
+                        <div class="lw-cat">🐈‍⬛</div>
+                    </div>
+
+                    <div class="game-info reveal">
+                        <div class="sub">2D METROIDVANIA / UNITY</div>
+                        <h3>LIGHT WORLD</h3>
+
+                        <p>
+                            A 2D Metroidvania centered around Hito, a mysterious black cat
+                            who can separate its soul from its body. The game's world,
+                            progression and abilities are built around the idea of
+                            <span class="highlight">soul manipulation</span>.
+                        </p>
+
+                        <div class="tag-wrap">
+                            <span class="tag">UNITY 2D</span>
+                            <span class="tag">C#</span>
+                            <span class="tag">URP</span>
+                            <span class="tag">PIXEL ART</span>
+                            <span class="tag">SHADERS</span>
+                            <span class="tag">GAME DESIGN</span>
+                            <span class="tag">ASEPRITE</span>
+                        </div>
+
+                        <div class="feature-list">
+                            <div class="feature-item">Soul separation as a central gameplay mechanic.</div>
+                            <div class="feature-item">Interactive systems, terminals and environmental puzzles.</div>
+                            <div class="feature-item">Custom visual effects and shader experiments.</div>
+                            <div class="feature-item">A stylized world built around mystery, light and souls.</div>
+                        </div>
+
+                        <a class="button" href="https://t.me/Light_Inter_wordl" target="_blank" rel="noopener">
+                            <span>LW TELEGRAM CHANNEL →</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SKILLS -->
+        <section id="skills">
+            <div class="container">
+                <div class="eyebrow reveal">TOOLKIT</div>
+
+                <h2 class="section-title reveal">
+                    WHAT I <span>DO</span>
+                </h2>
+
+                <div class="skills">
+                    <article class="skill reveal">
+                        <h3>C#</h3>
+                        <p>Gameplay systems, mechanics, UI, state logic and custom tools for Unity projects.</p>
+                    </article>
+
+                    <article class="skill reveal">
+                        <h3>UNITY</h3>
+                        <p>Unity 2D development, physics, animation, URP, cameras, optimization and scene logic.</p>
+                    </article>
+
+                    <article class="skill reveal">
+                        <h3>SHADERS</h3>
+                        <p>Custom scripted shaders and visual effects such as distortion, glow and screen-space experiments.</p>
+                    </article>
+
+                    <article class="skill reveal">
+                        <h3>PIXEL ART</h3>
+                        <p>Sprites, environments, particles, cards, UI elements and atmospheric assets in Aseprite.</p>
+                    </article>
+
+                    <article class="skill reveal">
+                        <h3>GAME DESIGN</h3>
+                        <p>Gameplay loops, progression, abilities, rewards and mechanics designed to feel good in motion.</p>
+                    </article>
+
+                    <article class="skill reveal">
+                        <h3>PROTOTYPING</h3>
+                        <p>Turning an idea into a playable experiment quickly, then iterating until the mechanic works.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- JOURNEY -->
+        <section>
+            <div class="container">
+                <div class="eyebrow reveal">MY JOURNEY</div>
+
+                <h2 class="section-title reveal">
+                    FROM IDEA TO <span>GAME</span>
+                </h2>
+
+                <div class="journey">
+                    <div class="journey-item reveal">
+                        <div class="journey-dot"></div>
+                        <div class="journey-year">EARLY STAGE</div>
+                        <div class="journey-title">Started exploring programming</div>
+                        <div class="journey-text">Learning how code can turn a simple idea into something interactive.</div>
+                    </div>
+
+                    <div class="journey-item reveal">
+                        <div class="journey-dot"></div>
+                        <div class="journey-year">UNITY ERA</div>
+                        <div class="journey-title">Focused on game development</div>
+                        <div class="journey-text">Moved toward Unity and C#, building mechanics instead of only studying theory.</div>
+                    </div>
+
+                    <div class="journey-item reveal">
+                        <div class="journey-dot"></div>
+                        <div class="journey-year">CURRENT</div>
+                        <div class="journey-title">Building Light World</div>
+                        <div class="journey-text">Combining gameplay, pixel art, shaders, atmosphere and narrative into one project.</div>
+                    </div>
+
+                    <div class="journey-item reveal">
+                        <div class="journey-dot"></div>
+                        <div class="journey-year">NEXT</div>
+                        <div class="journey-title">Turn experiments into finished games</div>
+                        <div class="journey-text">Keep creating prototypes, ship projects and grow toward becoming a professional game developer.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ABOUT -->
+        <section id="about">
+            <div class="container">
+                <div class="eyebrow reveal">PROFILE</div>
+
+                <h2 class="section-title reveal">
+                    ABOUT <span>ME</span>
+                </h2>
+
+                <div class="about-grid">
+                    <div class="about-card reveal">
+                        <p>
+                            I'm an indie game developer from Germany who likes to build
+                            <span class="highlight">2D games with strong atmosphere</span>.
+                            I enjoy the part where an abstract idea becomes a mechanic,
+                            then a system, and finally something you can actually play.
+                        </p>
+
+                        <br>
+
+                        <p>
+                            I work mostly with
+                            <span class="highlight">Unity, C#, Aseprite and custom shaders</span>.
+                            Light World is the project where I'm putting these skills together
+                            and experimenting with my own visual style.
+                        </p>
+                    </div>
+
+                    <div class="about-card reveal">
+                        <div class="profile-list">
+                            <div class="profile-row">
+                                <span class="profile-key">Alias</span>
+                                <span class="profile-value">Lime</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Born</span>
+                                <span class="profile-value">2010</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Role</span>
+                                <span class="profile-value">Indie Game Developer</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Engine</span>
+                                <span class="profile-value">Unity</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Language</span>
+                                <span class="profile-value">C#</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Art</span>
+                                <span class="profile-value">Pixel Art / Aseprite</span>
+                            </div>
+
+                            <div class="profile-row">
+                                <span class="profile-key">Main Project</span>
+                                <span class="profile-value">Light World</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PROJECTS -->
+        <section id="projects">
+            <div class="container">
+                <div class="eyebrow reveal">EXPERIMENTS</div>
+
+                <h2 class="section-title reveal">
+                    OTHER <span>PROJECTS</span>
+                </h2>
+
+                <div class="projects">
+                    <article class="project reveal">
+                        <div class="project-icon">FX</div>
+                        <h3>Shader Lab</h3>
+                        <p>Custom shader experiments, distortion effects and visual experiments made to push the game's atmosphere.</p>
+                    </article>
+
+                    <article class="project reveal">
+                        <div class="project-icon">COMBAT</div>
+                        <h3>Combat System</h3>
+                        <p>Prototype combat mechanics, abilities, enemies and responsive player interactions.</p>
+                    </article>
+
+                    <article class="project reveal">
+                        <div class="project-icon">PLAY</div>
+                        <h3>Gameplay Experiments</h3>
+                        <p>Small prototypes created to test unusual ideas before turning the best ones into real systems.</p>
+                    </article>
+
+                    <article class="project reveal">
+                        <div class="project-icon">ART</div>
+                        <h3>Pixel Art</h3>
+                        <p>Sprites, cards, particles, environments and UI pieces created in a consistent pixel-art direction.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- CONTACT -->
+        <section id="contact">
+            <div class="container">
+                <div class="contact-shell reveal">
+                    <div class="contact-grid">
+                        <div>
+                            <div class="eyebrow">LET'S CONNECT</div>
+
+                            <h2>
+                                BUILD<br>
+                                SOMETHING<span>.</span>
+                            </h2>
+
+                            <p class="contact-copy">
+                                Want to follow Light World, check out my code or just talk about game development?
+                                All my main links are below.
+                            </p>
+                        </div>
+
+                        <div class="socials">
+                            <a class="social" href="https://t.me/goodkote4ka" target="_blank" rel="noopener">
+                                <div class="social-left">
+                                    <span class="social-icon">TG</span>
+                                    <div>
+                                        <div class="social-label">Telegram</div>
+                                        <div class="social-handle">@goodkote4ka</div>
+                                    </div>
+                                </div>
+                                <span class="social-arrow">↗</span>
+                            </a>
+
+                            <a class="social" href="https://t.me/Light_Inter_wordl" target="_blank" rel="noopener">
+                                <div class="social-left">
+                                    <span class="social-icon">LW</span>
+                                    <div>
+                                        <div class="social-label">Light World Channel</div>
+                                        <div class="social-handle">t.me/Light_Inter_wordl</div>
+                                    </div>
+                                </div>
+                                <span class="social-arrow">↗</span>
+                            </a>
+
+                            <a class="social" href="https://github.com/LightLime4ik" target="_blank" rel="noopener">
+                                <div class="social-left">
+                                    <span class="social-icon">GH</span>
+                                    <div>
+                                        <div class="social-label">GitHub</div>
+                                        <div class="social-handle">github.com/LightLime4ik</div>
+                                    </div>
+                                </div>
+                                <span class="social-arrow">↗</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="qr-layout">
+                        <div id="telegramQR" aria-label="QR code to Telegram"></div>
+
+                        <div>
+                            <div class="qr-title">TELEGRAM QR</div>
+                            <div class="qr-text">
+                                Наведи камеру телефона на QR-код, чтобы быстро открыть мой Telegram:
+                                <strong>@goodkote4ka</strong>.
+                                QR-код генерируется прямо на странице.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-line"></div>
+        <div>© 2026 LIME — Indie Game Developer · Light World</div>
+    </footer>
+
+    <!-- QRCode.js — used only to render the Telegram QR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        // ---------- SCROLL REVEAL ----------
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add("visible");
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.12 });
+
+        document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
+
+        // ---------- CURSOR GLOW ----------
+        const glow = document.querySelector(".cursor-glow");
+
+        window.addEventListener("mousemove", (event) => {
+            glow.style.left = event.clientX + "px";
+            glow.style.top = event.clientY + "px";
+            document.body.classList.add("cursor-active");
+        });
+
+        // ---------- SCROLL PROGRESS ----------
+        const progress = document.querySelector(".scroll-progress");
+
+        function updateProgress() {
+            const max = document.documentElement.scrollHeight - window.innerHeight;
+            const value = max > 0 ? (window.scrollY / max) * 100 : 0;
+            progress.style.width = value + "%";
+        }
+
+        window.addEventListener("scroll", updateProgress, { passive: true });
+        updateProgress();
+
+        // ---------- FLOATING PARTICLES ----------
+        const particleCount = window.innerWidth < 700 ? 16 : 28;
+
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement("div");
+            particle.className = "particle";
+
+            particle.style.left = (Math.random() * 100) + "vw";
+            particle.style.top = (70 + Math.random() * 40) + "vh";
+            particle.style.animationDuration = (5 + Math.random() * 8) + "s";
+            particle.style.animationDelay = (-Math.random() * 8) + "s";
+
+            document.body.appendChild(particle);
+        }
+
+        // ---------- TILT EFFECT FOR FEATURE CARDS ----------
+        document.querySelectorAll(".game-info, .game-visual, .hero-card, .contact-shell").forEach((card) => {
+            card.addEventListener("mousemove", (event) => {
+                if (window.matchMedia("(max-width: 980px)").matches) return;
+
+                const rect = card.getBoundingClientRect();
+                const px = (event.clientX - rect.left) / rect.width;
+                const py = (event.clientY - rect.top) / rect.height;
+
+                const rotateY = (px - 0.5) * 3;
+                const rotateX = (0.5 - py) * 3;
+
+                card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            });
+
+            card.addEventListener("mouseleave", () => {
+                card.style.transform = "";
+            });
+        });
+
+        // ---------- TELEGRAM QR ----------
+        // This QR points to the personal Telegram profile.
+        if (window.QRCode) {
+            new QRCode(document.getElementById("telegramQR"), {
+                text: "https://t.me/goodkote4ka",
+                width: 120,
+                height: 120,
+                colorDark: "#071014",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        } else {
+            document.getElementById("telegramQR").innerHTML =
+                "<span style='color:#071014;font:700 11px monospace;text-align:center'>QR LIBRARY<br>UNAVAILABLE</span>";
+        }
+    </script>
+</body>
+</html>
